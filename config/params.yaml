@@ -1,4 +1,7 @@
 main:
   data_path: data
+  mlruns_path: mlruns
   autogluon_path: .
   stock_symbol: QQQ
+  use_databricks: False
+  experiment_name: development

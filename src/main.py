@@ -11,7 +11,10 @@ from autogluon.timeseries import TimeSeriesDataFrame, TimeSeriesPredictor
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from hydra.core.hydra_config import HydraConfig
+import mlflow as mf
 
+
+# mlflow run src --experiment-name development
 
 def download_time_series_daily_adjusted(symbol: str, full_output: bool, api_key: str, filename: str):
     """
@@ -71,15 +74,26 @@ def load_daily_price_adjusted(filename: str) -> pd.DataFrame:
     return df
 
 
-@hydra.main(version_base=None, config_path='../config', config_name='params')
+@hydra.main(config_path='../config', config_name='params')
 def main(params: DictConfig) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
+    # Using an old version of hydra-core because of compatibility with autogluon;
+    # the old version changes current directory right after reading the params.yaml file.
+    # Here we undo that, and set the current directory back to the one containing this script
+    os.chdir('../../..')
 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
     info(f'Working directory: {Path.cwd()}')
     log_file = HydraConfig.get().job_logging.handlers.file.filename
     info(f'Log file: {log_file}')
     dot_hydra = f'{HydraConfig.get().run.dir}/{HydraConfig.get().output_subdir}'
     info(f'Hydra output sub-directory: {dot_hydra}')
+
+    tracking_uri = 'databricks' if params.main.use_databricks else str(Path('../' + params.main.mlruns_path).absolute())
+    info(f'Tracking info will go to: {tracking_uri}')
+    mf.set_tracking_uri(tracking_uri)
+    experiment_name = params.main.experiment_name
+    mf.set_experiment(experiment_name)
+    info(f'Experiment name is: {experiment_name}')
 
     load_dotenv()
     api_key = os.getenv('API_KEY')

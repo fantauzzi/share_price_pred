@@ -1,0 +1,4 @@
+main:
+  data_path: data
+  autogluon_path: .
+  stock_symbol: QQQ

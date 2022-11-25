@@ -1,5 +1,6 @@
 .env
-daily_price-*.csv
+data/daily_price-*.csv
+autogluon
 
 ### Python template
 # Byte-compiled / optimized / DLL files

@@ -1,11 +1,13 @@
 from pathlib import Path
 import logging
 from logging import info
+import pandas as pd
 from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
 import mlflow as mf
 
 
-def boostrap_pipeline_component(params):
+def boostrap_pipeline_component(params: DictConfig) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
     info(f'Working directory: {Path.cwd()}')
     log_file = HydraConfig.get().job_logging.handlers.file.filename
@@ -17,23 +19,29 @@ def boostrap_pipeline_component(params):
     info(f'Tracking info will go to: {tracking_uri}')
     mf.set_tracking_uri(tracking_uri)
     experiment_name = params.main.experiment_name  # TODO Should I allow to set it only from CLI, and here only read it?
-                                                   # Therefore remove it from params.yaml
+    # Therefore remove it from params.yaml
     mf.set_experiment(experiment_name)
     info(f'Experiment name is: {experiment_name}')
 
 
-def get_data_filename(params, symbol):
+def get_data_filename(params: DictConfig, symbol: str) -> str:
     data_filename = f'../{params.main.data_path}/daily_price-{symbol}.csv'
     return data_filename
 
 
-def get_autogluon_dir(params):
+def get_autogluon_dir(params: DictConfig) -> str:
     autogluon_dir = f'../{params.main.autogluon_path}/autogluon'
     return autogluon_dir
 
 
-def get_run_name():
+def get_run_name() -> str:
     mlflow_client = mf.MlflowClient()
     mlflow_run_data = mlflow_client.get_run(mf.active_run().info.run_id).data
     run_name = mlflow_run_data.tags["mlflow.runName"]
     return run_name
+
+
+def load_daily_price_adjusted(filename: str) -> pd.DataFrame:
+    df = pd.read_csv(filename)
+    df = df.astype({'timestamp': 'datetime64'})
+    return df

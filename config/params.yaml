@@ -5,3 +5,8 @@ main:
   stock_symbol: QQQ
   use_databricks: False
   experiment_name: default_experiment
+training:
+  prediction_length: 7
+  eval_metric: 'MAPE'
+  presets: 'fast_training'
+  time_limit: 90

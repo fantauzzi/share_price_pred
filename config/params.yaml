@@ -4,4 +4,4 @@ main:
   autogluon_path: .
   stock_symbol: QQQ
   use_databricks: False
-  experiment_name: development
+  experiment_name: default_experiment

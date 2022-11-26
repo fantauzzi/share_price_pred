@@ -3,18 +3,17 @@ import shutil
 import json
 import os
 from pathlib import Path
-import logging
 from logging import info
 from dotenv import load_dotenv
 import pandas as pd
-from autogluon.timeseries import TimeSeriesDataFrame, TimeSeriesPredictor
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 import hydra
-from hydra.core.hydra_config import HydraConfig
 import mlflow as mf
+from utils import boostrap_pipeline_component, get_data_filename, get_run_name
 
 
-# mlflow run src --experiment-name default_experiment
+# mlflow run src -e source_data --experiment-name default_experiment
+
 
 def download_time_series_daily_adjusted(symbol: str, full_output: bool, api_key: str, filename: str):
     """
@@ -68,75 +67,29 @@ def time_series_daily_adjusted(symbol: str, full_output: bool, api_key: str) -> 
     return df
 
 
-def load_daily_price_adjusted(filename: str) -> pd.DataFrame:
-    df = pd.read_csv(filename)
-    df = df.astype({'timestamp': 'datetime64'})
-    return df
-
-
 @hydra.main(config_path='../config', config_name='params')
 def main(params: DictConfig) -> None:
     # Using an old version of hydra-core because of compatibility with autogluon;
     # the old version changes current directory right after reading the params.yaml file.
     # Here we undo that, and set the current directory back to the one containing this script
     os.chdir('../../..')
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
-    info(f'Working directory: {Path.cwd()}')
-    log_file = HydraConfig.get().job_logging.handlers.file.filename
-    info(f'Log file: {log_file}')
-    dot_hydra = f'{HydraConfig.get().run.dir}/{HydraConfig.get().output_subdir}'
-    info(f'Hydra output sub-directory: {dot_hydra}')
-
-    tracking_uri = 'databricks' if params.main.use_databricks else str(Path('../' + params.main.mlruns_path).absolute())
-    info(f'Tracking info will go to: {tracking_uri}')
-    mf.set_tracking_uri(tracking_uri)
-    experiment_name = params.main.experiment_name
-    mf.set_experiment(experiment_name)
-    info(f'Experiment name is: {experiment_name}')
+    info(f'Running {Path(__file__).name} ############################################################################')
+    boostrap_pipeline_component(params)
+    mf.start_run()
+    run_name = get_run_name()
+    info(f'Started run {run_name}')
 
     load_dotenv()
     api_key = os.getenv('API_KEY')
 
     symbol = params.main.stock_symbol
-    data_filename = f'../{params.main.data_path}/daily_price-{symbol}.csv'
-    autogluon_dir = f'../{params.main.autogluon_path}/autogluon'
+    data_filename = get_data_filename(params, symbol)
     if not Path(data_filename).exists():
         info(f'Downloading data for stock {symbol} into file {data_filename}')
         download_time_series_daily_adjusted(symbol, full_output=True, api_key=api_key, filename=data_filename)
-
-    info(f'Loading data from file {data_filename}')
-    df = load_daily_price_adjusted(data_filename)
-    df.drop(['open', 'high', 'low', 'close', 'volume', 'dividend_amount', 'split_coefficient'], axis=1, inplace=True)
-    df['symbol'] = symbol
-    ts_df = TimeSeriesDataFrame.from_data_frame(df, id_column='symbol', timestamp_column='timestamp')
-
-    prediction_length = 7
-    test_data = ts_df
-    train_data = ts_df.slice_by_timestep(None, -prediction_length)
-    predictor = TimeSeriesPredictor(path=autogluon_dir,
-                                    target="adjusted_close",
-                                    prediction_length=prediction_length,
-                                    eval_metric="MAPE",
-                                    ignore_time_index=True
-                                    )
-
-    predictor.fit(train_data,
-                  presets="fast_training",
-                  time_limit=60,
-                  )
-
-    leaderboard = predictor.leaderboard(test_data, silent=False)
-    # print(leaderboard)
+    else:
+        info(f'Data for stock {symbol} already available in {data_filename} -Not going to download data')
 
 
 if __name__ == '__main__':
     main()
-
-# TODO use a multi-window backtest
-# Draw charts, understand what is going on (MLFlow? Tensorboard?)
-# Compare results with QQQ and indices with those of individual stocks
-# Try much longer time limit, or allocate additional time to time-consuming models, if AutoGluon allows it
-# Understand how AutoGluon uses metadata and covariates
-# How to explain the results?
-# Check AutoTS to do multivariate stuff https://winedarksea.github.io/AutoTS/build/html/index.html

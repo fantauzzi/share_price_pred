@@ -10,3 +10,12 @@ entry_points:
         default: ''
     command: >-
       python main.py $(echo {overrides})
+  source_data:
+    description: Fetches adjusted historical stock prices data via an API and save them locally
+    parameters:
+      overrides:
+        description: Configuration parameters to override.
+        type: str
+        default: ''
+    command: >-
+      python source_data.py $(echo {overrides})

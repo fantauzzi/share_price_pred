@@ -73,11 +73,7 @@ def main(params: DictConfig) -> None:
     # the old version changes current directory right after reading the params.yaml file.
     # Here we undo that, and set the current directory back to the one containing this script
     os.chdir('../../..')
-    info(f'Running {Path(__file__).name} ############################################################################')
     boostrap_pipeline_component(params)
-    mf.start_run()
-    run_name = get_run_name()
-    info(f'Started run {run_name}')
 
     load_dotenv()
     api_key = os.getenv('API_KEY')

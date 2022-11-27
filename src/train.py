@@ -14,11 +14,7 @@ from utils import boostrap_pipeline_component, get_data_filename, get_run_name, 
 @hydra.main(config_path='../config', config_name='params')
 def main(params: DictConfig) -> None:
     os.chdir('../../..')
-    info(f'Running {Path(__file__).name} ############################################################################')
     boostrap_pipeline_component(params)
-    mf.start_run()
-    run_name = get_run_name()
-    info(f'Started run {run_name}')
 
     symbol = params.main.stock_symbol
     data_filename = get_data_filename(params, symbol)

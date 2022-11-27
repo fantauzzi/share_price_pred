@@ -3,6 +3,7 @@ python_env: python_env.yaml
 
 entry_points:
   main:
+    description: Runs the requested components of the pipeline
     parameters:
       overrides:
         description: Configuration parameters to override.
@@ -20,7 +21,7 @@ entry_points:
     command: >-
       python source_data.py $(echo {overrides})
   train:
-    description: Train the model
+    description: Trains the model
     parameters:
       overrides:
         description: Configuration parameters to override.

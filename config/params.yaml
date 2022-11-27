@@ -1,4 +1,5 @@
 main:
+  steps: source_data,train
   data_path: data
   mlruns_path: mlruns
   autogluon_path: .

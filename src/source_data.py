@@ -3,7 +3,7 @@ import shutil
 import json
 import os
 from pathlib import Path
-from logging import info
+from logging import info, warning
 from dotenv import load_dotenv
 import pandas as pd
 from omegaconf import DictConfig
@@ -80,11 +80,13 @@ def main(params: DictConfig) -> None:
 
     symbol = params.main.stock_symbol
     data_filename = get_data_filename(params, symbol)
-    if not Path(data_filename).exists():
-        info(f'Downloading data for stock {symbol} into file {data_filename}')
-        download_time_series_daily_adjusted(symbol, full_output=True, api_key=api_key, filename=data_filename)
-    else:
-        info(f'Data for stock {symbol} already available in {data_filename} -Not going to download data')
+    if Path(data_filename).exists():
+        warning(f'Data already available in file {data_filename} -Will be overwritten with new download')
+    info(f'Downloading data for stock {symbol} into file {data_filename}')
+    download_time_series_daily_adjusted(symbol, full_output=True, api_key=api_key, filename=data_filename)
+    mf.log_artifact(data_filename, )
+    artifact_uri = mf.get_artifact_uri()
+    info(f'Logged artifact {data_filename} in current run with URI {artifact_uri}/{Path(data_filename).name}')
 
 
 if __name__ == '__main__':

@@ -1,11 +1,11 @@
 import os
-from pathlib import Path
 from logging import info
+from pathlib import Path
 from autogluon.timeseries import TimeSeriesDataFrame, TimeSeriesPredictor
 from omegaconf import DictConfig
 import hydra
 import mlflow as mf
-from utils import boostrap_pipeline_component, get_data_filename, get_run_name, load_daily_price_adjusted, \
+from utils import boostrap_pipeline_component, get_data_filename, load_daily_price_adjusted, \
     get_autogluon_dir
 
 
@@ -17,7 +17,11 @@ def main(params: DictConfig) -> None:
     boostrap_pipeline_component(params)
 
     symbol = params.main.stock_symbol
-    data_filename = get_data_filename(params, symbol)
+    if params.main.dataset is not None:
+        info(f'Downloading artifact {params.main.dataset} as dataset')
+        data_filename = mf.artifacts.download_artifacts(artifact_uri=params.main.dataset)
+    else:
+        data_filename = get_data_filename(params, symbol)
     info(f'Loading data from file {data_filename}')
     df = load_daily_price_adjusted(data_filename)
     df.drop(['open', 'high', 'low', 'close', 'volume', 'dividend_amount', 'split_coefficient'], axis=1, inplace=True)
@@ -40,6 +44,10 @@ def main(params: DictConfig) -> None:
                   time_limit=params.training.time_limit,
                   )
 
+    mf.log_artifact(autogluon_dir)
+    artifact_uri = mf.get_artifact_uri()
+    info(f'Logged artifact {autogluon_dir} in current run with URI {artifact_uri}/{Path(autogluon_dir).name}')
+
     leaderboard = predictor.leaderboard(test_data, silent=False)
 
 
@@ -47,7 +55,6 @@ if __name__ == '__main__':
     main()
 
 # TODO use a multi-window backtest
-# Make a proper main
 # Draw charts, understand what is going on (MLFlow? Tensorboard?)
 # Compare results with QQQ and indices with those of individual stocks
 # Try much longer time limit, or allocate additional time to time-consuming models, if AutoGluon allows it

@@ -1,6 +1,8 @@
 main:
   steps: source_data,train
   data_path: data
+  dataset:
+  # file:///home/fanta/workspace/share_price_pred/mlruns/644852676558696179/e346a69fcbbc484db75a75007e247c56/artifacts/daily_price-QQQ.csv
   mlruns_path: mlruns
   autogluon_path: .
   stock_symbol: QQQ

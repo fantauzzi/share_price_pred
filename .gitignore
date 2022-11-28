@@ -2,6 +2,7 @@
 data/daily_price-*.csv
 autogluon
 mlruns
+src/snippet.py
 
 ### Python template
 # Byte-compiled / optimized / DLL files

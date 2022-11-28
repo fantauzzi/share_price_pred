@@ -2,10 +2,12 @@ from pathlib import Path
 import logging
 from logging import info
 from sys import argv
+from typing import Union
 import pandas as pd
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 import mlflow as mf
+from mlflow.entities import Metric
 
 
 def boostrap_pipeline_component(params: DictConfig) -> None:
@@ -37,6 +39,10 @@ def boostrap_pipeline_component(params: DictConfig) -> None:
     mf.start_run()  # TODO Should I check if a run is already going on, before starting a new one?
     run_name = get_run_name()
     info(f'Started run {run_name}')
+
+    unfolded_params = unfold_config(params)
+    info(f'Logging parameters into current run: {unfolded_params}')
+    mf.log_params(unfold_config(params))
 
 
 def get_data_filename(params: DictConfig, symbol: str) -> str:
@@ -83,3 +89,56 @@ def load_daily_price_adjusted(filename: str) -> pd.DataFrame:
     df = pd.read_csv(filename)
     df = df.astype({'timestamp': 'datetime64'})
     return df
+
+
+def log_outputs() -> None:
+    dot_hydra = f'{HydraConfig.get().run.dir}'
+    info(f'Logging artifact {dot_hydra} into current run')
+    mf.log_artifact(dot_hydra)
+
+
+def unfold_config(config: Union[DictConfig, dict]) -> dict[str, str]:
+    """
+    Takes a DictConfig, or a dict obtained from a DictConfig, and converts it to a dict with one key-value pair
+    for every parameter, where the grouping of keys from the DictConfig is replaced by concatenating all the keys
+    with a dot.
+    :param config: the given DictConfig, or the given DictConfig cast to a dict.
+    :return: a dictionary with the result of the translation.
+    """
+
+    def unfold_config_as_list(config: Union[DictConfig, dict]) -> list[str]:
+        res = []
+        for key, value in config.items():
+            if isinstance(value, dict) or isinstance(value, DictConfig):
+                embedded_res = unfold_config_as_list(value)
+                res.extend([f'{key}.{item}' for item in embedded_res])
+            else:
+                res.append(f'{key} {value}')
+        return res
+
+    unfolded = unfold_config_as_list(config)
+    unfolded = {item[:item.rfind(' ')]: item[item.rfind(' ') + 1:] for item in unfolded}
+    unfolded = dict(sorted(unfolded.items()))
+    return unfolded
+
+
+def log_dataframe(df: pd.DataFrame, run_id: str = None) -> None:
+    if run_id is None:
+        run_id = mf.active_run().info.run_id
+
+    log_this = [Metric(key=f'{row_name}/{col_name}', value=item, step=0, timestamp=0)
+                for col_name in df
+                for row_name, item in zip(df.index, df[col_name])]
+
+    client = mf.MlflowClient()
+    client.log_batch(run_id=run_id, metrics=log_this)
+
+
+def main():
+    df = pd.DataFrame({'model': ['ARIMA', 'ETS', 'Theta'], 'score_test': [1, 2, 3], 'score_val': [-1, -2, -3]})
+    df.set_index('model', inplace=True)
+    log_dataframe(df)
+
+
+if __name__ == '__main__':
+    main()

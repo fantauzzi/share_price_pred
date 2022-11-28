@@ -9,7 +9,7 @@ import pandas as pd
 from omegaconf import DictConfig
 import hydra
 import mlflow as mf
-from utils import boostrap_pipeline_component, get_data_filename, get_run_name
+from utils import boostrap_pipeline_component, get_data_filename, log_outputs
 
 
 # mlflow run src -e source_data --experiment-name default_experiment
@@ -69,24 +69,29 @@ def time_series_daily_adjusted(symbol: str, full_output: bool, api_key: str) -> 
 
 @hydra.main(config_path='../config', config_name='params')
 def main(params: DictConfig) -> None:
-    # Using an old version of hydra-core because of compatibility with autogluon;
-    # the old version changes current directory right after reading the params.yaml file.
-    # Here we undo that, and set the current directory back to the one containing this script
-    os.chdir('../../..')
-    boostrap_pipeline_component(params)
+    try:
+        # Using an old version of hydra-core because of compatibility with autogluon;
+        # the old version changes current directory right after reading the params.yaml file.
+        # Here we undo that, and set the current directory back to the one containing this script
+        os.chdir('../../..')
+        boostrap_pipeline_component(params)
 
-    load_dotenv()
-    api_key = os.getenv('API_KEY')
+        load_dotenv()
+        api_key = os.getenv('API_KEY')
 
-    symbol = params.main.stock_symbol
-    data_filename = get_data_filename(params, symbol)
-    if Path(data_filename).exists():
-        warning(f'Data already available in file {data_filename} -Will be overwritten with new download')
-    info(f'Downloading data for stock {symbol} into file {data_filename}')
-    download_time_series_daily_adjusted(symbol, full_output=True, api_key=api_key, filename=data_filename)
-    mf.log_artifact(data_filename, )
-    artifact_uri = mf.get_artifact_uri()
-    info(f'Logged artifact {data_filename} in current run with URI {artifact_uri}/{Path(data_filename).name}')
+        symbol = params.main.stock_symbol
+        data_filename = get_data_filename(params, symbol)
+        if Path(data_filename).exists():
+            warning(f'Data already available in file {data_filename} -Will be overwritten with new download')
+        info(f'Downloading data for stock {symbol} into file {data_filename}')
+        download_time_series_daily_adjusted(symbol, full_output=True, api_key=api_key, filename=data_filename)
+        mf.log_artifact(data_filename, )
+        artifact_uri = mf.get_artifact_uri()
+        info(f'Logged artifact {data_filename} in current run with URI {artifact_uri}/{Path(data_filename).name}')
+    except Exception as ex:
+        raise ex
+    finally:
+        log_outputs()
 
 
 if __name__ == '__main__':

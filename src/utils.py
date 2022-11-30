@@ -82,7 +82,7 @@ def get_run_name() -> str:
 def load_daily_price_adjusted(filename: str) -> pd.DataFrame:
     """
     Loads from a file, and returns a Pandas dataframe, with the daily information for a given stock, including its
-    adjausted prices.
+    adjusted prices.
     :param filename: the name of the file with the information.
     :return: the requested dataset in a dataframe.
     """
@@ -123,6 +123,12 @@ def unfold_config(config: Union[DictConfig, dict]) -> dict[str, str]:
 
 
 def log_dataframe(df: pd.DataFrame, run_id: str = None) -> None:
+    """
+    Log a dataframe as metrics under a given run, or the current run. For every value in the dataframe, its
+    metric name is obtained from the value of the dataframe index on the same row and the name of the column.
+    :param df: The dataframe to be logged as metrics.
+    :param run_id: The ID of the run under which to log the metrics. If missing, it defaults to the current run.
+    """
     if run_id is None:
         run_id = mf.active_run().info.run_id
 
@@ -137,7 +143,6 @@ def log_dataframe(df: pd.DataFrame, run_id: str = None) -> None:
 def main():
     df = pd.DataFrame({'model': ['ARIMA', 'ETS', 'Theta'], 'score_test': [1, 2, 3], 'score_val': [-1, -2, -3]})
     df.set_index('model', inplace=True)
-    log_dataframe(df)
 
 
 if __name__ == '__main__':

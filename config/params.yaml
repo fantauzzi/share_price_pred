@@ -9,7 +9,9 @@ main:
   use_databricks: False
   experiment_name: default_experiment
 training:
-  prediction_length: 7
+  prediction_length: 5
   eval_metric: 'MAPE'
   presets: 'fast_training'
   time_limit: 90
+  num_windows: 52
+  selected_model:

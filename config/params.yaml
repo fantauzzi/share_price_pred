@@ -10,6 +10,7 @@ main:
   experiment_name: default_experiment
 training:
   prediction_length: 5
+  test_set_size: 260
   eval_metric: 'MAPE'
   presets: 'fast_training'
   time_limit: 90

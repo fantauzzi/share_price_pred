@@ -13,3 +13,4 @@ dependencies:
   - python-dotenv==0.21.0
   - mlflow==2.0.1
   - autogluon==0.6.0
+  - darts==0.22.0

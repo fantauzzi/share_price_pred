@@ -5,7 +5,8 @@ main:
   # file:///home/fanta/workspace/share_price_pred/mlruns/644852676558696179/e346a69fcbbc484db75a75007e247c56/artifacts/daily_price-QQQ.csv
   mlruns_path: mlruns
   autogluon_path: .
-  saved_model: models/model.pkl
+  trained_saved_model: models/trained-model.pkl
+  tested_saved_model: models/tested-model.pkl
   stock_symbol: QQQ
   use_databricks: False
   experiment_name: default_experiment

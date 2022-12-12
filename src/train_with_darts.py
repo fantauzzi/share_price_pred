@@ -21,7 +21,19 @@ def backtest(model: forecasting,
              stride: int,
              value_cols: str,
              saved_model: str) -> None:
-    # df_train_val = df_dataset.iloc[:-params.training.test_set_size]
+    """
+    Trains and backtests the model, saves the resulting model and logs the model and metrics with MLFlow. Before
+    being saved, the model is re-trained on the whole dataset.
+    :param model: the model to be trained and backtested.
+    :param df_dataset: the dataset to be used for training and backtasting.
+    :param start_at: the position of the first sample in the dataset that will be used to train the model; training
+    and backtest will start from that position and proceed toward the end of the dataset.
+    :param prediction_length: the temporal horizon for the forecast; a forecast at time T will predict times
+    T+1,...,T+prediction_length
+    :param stride: the number of temporal steps between two consecutive forecasts
+    :param value_cols: the name of the column in the df_dataset dataframe that contain the variable to be forecasted
+    :param saved_model: file name with path where the trained model will be saved
+    """
     ts_train_val = TimeSeries.from_dataframe(df=df_dataset, value_cols=value_cols)
 
     forecasts = model.historical_forecasts(series=ts_train_val,
@@ -92,8 +104,6 @@ def main(params: DictConfig) -> None:
         df.drop(['open', 'high', 'low', 'close', 'volume', 'dividend_amount', 'split_coefficient'], axis=1,
                 inplace=True)
         df['symbol'] = symbol
-        # df_train_val = df.iloc[:-params.training.test_set_size]
-        # ts_train_val = TimeSeries.from_dataframe(df=df_train_val, value_cols='adjusted_close')
 
         prediction_length = params.training.prediction_length
         model = ARIMA()
@@ -124,65 +134,6 @@ def main(params: DictConfig) -> None:
                      stride=params.training.stride,
                      value_cols='adjusted_close',
                      saved_model=tested_saved_model)
-
-        '''
-        # noinspection PyArgumentList
-        forecasts = model.historical_forecasts(series=ts_train_val,
-                                               start=params.training.start_training_at,
-                                               forecast_horizon=prediction_length,
-                                               stride=params.training.stride,
-                                               retrain=True,
-                                               overlap_end=False,
-                                               last_points_only=False,
-                                               verbose=True)
-
-        """ Compute the difference (with sign) forecast-actual and stores it in a DataFrame; every line corresponds
-        to the set of forecasts made at a given time (in the line index) for the forecasting horizon (one forecast
-        per column) """
-
-        differences_dict = {i: [] for i in range(prediction_length)}
-        forecasts_timestamp = []
-        for metrics_series in forecasts:
-            metrics_series_pd = metrics_series.pd_series()
-            time_at_forecast = metrics_series_pd.index[0] - 1
-            forecasts_timestamp.append(time_at_forecast)
-            for i in range(time_at_forecast, time_at_forecast + prediction_length):
-                diff = (metrics_series_pd[i + 1] - df_train_val.adjusted_close[i + 1])
-                differences_dict[i - time_at_forecast].append(diff)
-
-        differences_df = pd.DataFrame(differences_dict, index=forecasts_timestamp)
-
-        info('Re-fitting model on whole train/val dataset')
-        model.fit(series=ts_train_val)
-        info(f'Saving traiend model into {saved_model}')
-        model.save(saved_model)
-        info(f'Logging artifact {saved_model} in current run')
-        mf.log_artifact(saved_model)
-
-        info('Logging validation metrics in current run')
-        for idx, row in differences_df.iterrows():
-            # noinspection PyTypeChecker
-            se_to_log = {f'SE at T{item_idx + 1}': value ** 2 for item_idx, value in row.items()}
-            # noinspection PyTypeChecker
-            ae_to_log = {f'AE at T{item_idx + 1}': np.abs(value) for item_idx, value in row.items()}
-            # noinspection PyTypeChecker
-            mf.log_metrics(se_to_log, step=idx)
-            # noinspection PyTypeChecker
-            mf.log_metrics(ae_to_log, step=idx)
-
-        mse_metrics = (differences_df ** 2).mean()
-        mae_metrics = np.abs(differences_df).mean()
-        mse_to_log = {f'MSE at T{item_idx + 1}': value for item_idx, value in mse_metrics.items()}
-        mae_to_log = {f'MAE at T{item_idx + 1}': value for item_idx, value in mae_metrics.items()}
-        mf.log_metrics(mse_to_log)
-        mf.log_metrics(mae_to_log)
-        '''
-
-        # df_test = df.iloc[-params.training.test_set_size:]
-        # ts_test = TimeSeries.from_dataframe(df=df_test, value_cols='adjusted_close')
-
-
-
 
     except Exception as ex:
         raise ex

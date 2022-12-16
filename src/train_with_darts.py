@@ -14,6 +14,127 @@ import numpy as np
 # mlflow run src -e train_with_darts --experiment-name default_experiment
 
 
+def rolling_forecast(model: forecasting,
+                     df_dataset: pd.DataFrame,
+                     start_at: int,
+                     prediction_length: int,
+                     stride: int,
+                     value_cols: str,
+                     saved_model: str) -> (forecasting, pd.DataFrame):
+    """
+    Trains and backtests the model, saves the resulting model and logs the model and metrics with MLFlow. Before
+    being saved, the model is re-trained on the whole dataset.
+    :param model: the model to be trained and backtested.
+    :param df_dataset: the dataset to be used for training and backtasting.
+    :param start_at: the position of the first sample in the dataset that will be used to train the model; training
+    and backtest will start from that position and proceed toward the end of the dataset.
+    :param prediction_length: the temporal horizon for the forecast; a forecast at time T will predict times
+    T+1,...,T+prediction_length
+    :param stride: the number of temporal steps between two consecutive forecasts
+    :param value_cols: the name of the column in the df_dataset dataframe that contain the variable to be forecasted
+    :param saved_model: file name with path where the trained model will be saved
+    """
+    ts_train_val = TimeSeries.from_dataframe(df=df_dataset, value_cols=value_cols)
+
+    forecasts = model.historical_forecasts(series=ts_train_val,
+                                           start=start_at,
+                                           forecast_horizon=prediction_length,
+                                           stride=stride,
+                                           retrain=True,
+                                           overlap_end=False,
+                                           last_points_only=False,
+                                           verbose=True)
+
+    # Store the forecasts in a dataframe, to be returned
+
+    forecasts_dict = {i: [] for i in range(prediction_length)}
+    forecasts_timestamp = []
+    for metrics_series in forecasts:
+        metrics_series_pd = metrics_series.pd_series()
+        time_at_forecast = metrics_series_pd.index[0] - 1
+        forecasts_timestamp.append(time_at_forecast)
+        for i in range(time_at_forecast, time_at_forecast + prediction_length):
+            forecasts_dict[i - time_at_forecast].append(metrics_series_pd[i + 1])
+
+    forecasts_df = pd.DataFrame(forecasts_dict, index=forecasts_timestamp)
+
+    info('Re-fitting model on whole dataset')
+    model.fit(series=ts_train_val)
+    info(f'Saving traiend model into {saved_model}')
+    model.save(saved_model)
+    info(f'Logging artifact {saved_model} in current run')
+    mf.log_artifact(saved_model)
+
+    return model, forecasts_df
+
+
+def rolling_metrics2(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols='adjusted_close'):
+    prediction_length = len(forecasts_df.columns)
+    differences_dict = {i: [] for i in range(prediction_length)}
+    apes_dict = {i: [] for i in range(prediction_length)}
+    for i in forecasts_df.columns:
+        for time_at_forecast in forecasts_df.index:
+            differences_dict[i].append(
+                forecasts_df[i][time_at_forecast] - df_dataset[value_cols][time_at_forecast + 1 + i])
+            apes_dict[i].append(
+                100 * np.abs(forecasts_df[i][time_at_forecast] - df_dataset[value_cols][time_at_forecast + 1 + i]) /
+                df_dataset[value_cols][time_at_forecast + 1 + i])
+
+    differences_df = pd.DataFrame(differences_dict, index=forecasts_df.index)
+    apes_df = pd.DataFrame(apes_dict, index=forecasts_df.index)
+
+    info('Logging validation metrics in current run')
+    for idx, row in differences_df.iterrows():
+        # noinspection PyTypeChecker
+        se_to_log = {f'SE at T{item_idx + 1}': value ** 2 for item_idx, value in row.items()}
+        # noinspection PyTypeChecker
+        ae_to_log = {f'AE at T{item_idx + 1}': np.abs(value) for item_idx, value in row.items()}
+        # noinspection PyTypeChecker
+        mf.log_metrics(se_to_log, step=idx)
+        # noinspection PyTypeChecker
+        mf.log_metrics(ae_to_log, step=idx)
+
+    for idx, row in apes_df.iterrows():
+        # noinspection PyTypeChecker
+        ape_to_log = {f'APE at T{item_idx + 1}': value for item_idx, value in row.items()}
+        # noinspection PyTypeChecker
+        mf.log_metrics(ape_to_log, step=idx)
+
+    mse_metrics = (differences_df ** 2).mean()
+    mae_metrics = np.abs(differences_df).mean()
+    mape_metrics = apes_df.mean()
+    mse_to_log = {f'MSE at T{item_idx + 1}': value for item_idx, value in mse_metrics.items()}
+    mae_to_log = {f'MAE at T{item_idx + 1}': value for item_idx, value in mae_metrics.items()}
+    mape_to_log = {f'MAPE at T{item_idx + 1}': value for item_idx, value in mape_metrics.items()}
+    mf.log_metrics(mse_to_log)
+    mf.log_metrics(mae_to_log)
+    mf.log_metrics(mape_to_log)
+
+
+def rolling_metrics(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols='adjusted_close'):
+    prediction_length = len(forecasts_df.columns)
+    ground_truth_dict = {i: [] for i in range(prediction_length)}
+    for i in forecasts_df.columns:
+        for time_at_forecast in forecasts_df.index:
+            ground_truth_dict[i].append(df_dataset[value_cols][time_at_forecast + 1 + i])
+
+    ground_truth_df = pd.DataFrame(ground_truth_dict, index=forecasts_df.index)
+
+    info('Logging validation metrics in current run')
+    assert ground_truth_df.columns.equals(forecasts_df.columns)
+
+    se_df = (forecasts_df - ground_truth_df) ** 2
+    ae_df = np.abs(forecasts_df - ground_truth_df)
+    ape_df = 100 * ae_df / ground_truth_df
+
+    for label, df in zip(('SE', 'AE', 'APE'), (se_df, ae_df, ape_df)):
+        for time_idx, value in df.mean().items():
+            mf.log_metric(key=f'M{label}', value=value, step=time_idx)
+        for time_idx, row in df.iterrows():
+            metrics_to_log = {f'{label} at T{item_idx + 1}': value for item_idx, value in row.items()}
+            mf.log_metrics(metrics=metrics_to_log, step=time_idx)
+
+
 def backtest(model: forecasting,
              df_dataset: pd.DataFrame,
              start_at: int,
@@ -114,26 +235,28 @@ def main(params: DictConfig) -> None:
             run_name = get_run_name()
             info(f'Started nested run {run_name} for training and validation via backtesting on model with '
                  f'{len(df_train_val)} samples')
-            backtest(model=model,
-                     df_dataset=df_train_val,
-                     start_at=params.training.start_training_at,
-                     prediction_length=prediction_length,
-                     stride=params.training.stride,
-                     value_cols='adjusted_close',
-                     saved_model=trained_saved_model)
+            model, forecast_df = rolling_forecast(model=model,
+                                                  df_dataset=df_train_val,
+                                                  start_at=params.training.start_training_at,
+                                                  prediction_length=prediction_length,
+                                                  stride=params.training.stride,
+                                                  value_cols='adjusted_close',
+                                                  saved_model=trained_saved_model)
+
+            rolling_metrics(forecasts_df=forecast_df, df_dataset=df_train_val, value_cols='adjusted_close', )
 
         tested_saved_model = f'../{params.main.tested_saved_model}'
         with mf.start_run(nested=True) as _:
             run_name = get_run_name()
             info(f'Started nested run {run_name} for testing on model with '
                  f'{params.training.test_set_size} samples to be forecasted')
-            backtest(model=model,
-                     df_dataset=df,
-                     start_at=len(df) - params.training.test_set_size,
-                     prediction_length=prediction_length,
-                     stride=params.training.stride,
-                     value_cols='adjusted_close',
-                     saved_model=tested_saved_model)
+            rolling_forecast(model=model,
+                             df_dataset=df,
+                             start_at=len(df) - params.training.test_set_size,
+                             prediction_length=prediction_length,
+                             stride=params.training.stride,
+                             value_cols='adjusted_close',
+                             saved_model=tested_saved_model)
 
     except Exception as ex:
         raise ex
@@ -145,15 +268,14 @@ if __name__ == '__main__':
     main()
 
 """ TODO
-Implement validation on a hold-out set, log the metrics
-Retrain on the whole train+validation set and save
-Implement the testing (it looks the same a backtestiing), draw charts of predictions vs. actual
-Retrain on the whole train+val+test set and save
+Why the spike in validation metrics toward the end of the training/val dataset?
+Implement the testing without rolling forecast (model is frozen, no retrained), draw charts of predictions vs. actual
 Add the MAPE metric (% error) 
 Try different models, do hyperparameters tuning (Optuna?). How do you track the tuning with MLFlow? Check examples.
 Automate experiments on a list of symbols. Should those be uni or multi variate?
 Throw in an index as an exogenous variable
 From source_data, save two different csv files for train/val and test
 Explain the model
+Dataset versoining
 Deployment and inference
 """

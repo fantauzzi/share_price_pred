@@ -4,7 +4,7 @@ build_dependencies:
   - pip
 # Dependencies required to run the project.
 dependencies:
-  - pandas==1.5.1
+  - pandas==1.5.2
   - orjson==3.8.2
   # Cannot use hydra 1.2 because it has a dependency conflict with autogluon 0.6.0
   - hydra-core==1.1.2
@@ -12,5 +12,5 @@ dependencies:
   - requests==2.28.1
   - python-dotenv==0.21.0
   - mlflow==2.0.1
-  - autogluon==0.6.0
+  - autogluon==0.6.1
   - darts==0.22.0

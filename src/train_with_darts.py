@@ -68,12 +68,20 @@ def rolling_forecast(model: forecasting,
     return model, forecasts_df
 
 
-def rolling_metrics(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols='adjusted_close'):
+def log_rolling_forecasts(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols: str) -> None:
+    for t_index in forecasts_df.columns:
+        for time_at_forecast in forecasts_df.index:
+            mf.log_metrics({f'Forecast T{t_index + 1}': forecasts_df[t_index][time_at_forecast],
+                            f'Ground truth T{t_index + 1}': df_dataset[value_cols][time_at_forecast + t_index + 1]},
+                           step=time_at_forecast + t_index + 1)
+
+
+def rolling_metrics(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols):
     prediction_length = len(forecasts_df.columns)
     ground_truth_dict = {i: [] for i in range(prediction_length)}
-    for i in forecasts_df.columns:
+    for t_index in forecasts_df.columns:
         for time_at_forecast in forecasts_df.index:
-            ground_truth_dict[i].append(df_dataset[value_cols][time_at_forecast + 1 + i])
+            ground_truth_dict[t_index].append(df_dataset[value_cols][time_at_forecast + 1 + t_index])
 
     ground_truth_df = pd.DataFrame(ground_truth_dict, index=forecasts_df.index)
 
@@ -106,8 +114,8 @@ def main(params: DictConfig) -> None:
             data_filename = get_data_filename(params, symbol)
         info(f'Loading data from file {data_filename}')
         df = load_daily_price_adjusted(data_filename)
-        df.drop(['open', 'high', 'low', 'close', 'volume', 'dividend_amount', 'split_coefficient'], axis=1,
-                inplace=True)
+        columns_to_drop = set(df.columns) - {'timestamp', 'symbol', params.main.column}
+        df.drop(columns_to_drop, axis=1, inplace=True)
         df['symbol'] = symbol
 
         prediction_length = params.training.prediction_length
@@ -124,10 +132,12 @@ def main(params: DictConfig) -> None:
                                                   start_at=params.training.start_training_at,
                                                   prediction_length=prediction_length,
                                                   stride=params.training.stride,
-                                                  value_cols='adjusted_close',
+                                                  value_cols=params.main.column,
                                                   saved_model=trained_saved_model)
 
-            rolling_metrics(forecasts_df=forecast_df, df_dataset=df_train_val, value_cols='adjusted_close', )
+            log_rolling_forecasts(forecasts_df=forecast_df, df_dataset=df_train_val, value_cols=params.main.column)
+
+            rolling_metrics(forecasts_df=forecast_df, df_dataset=df_train_val, value_cols=params.main.column)
 
         tested_saved_model = f'../{params.main.tested_saved_model}'
         with mf.start_run(nested=True) as _:
@@ -139,7 +149,7 @@ def main(params: DictConfig) -> None:
                              start_at=len(df) - params.training.test_set_size,
                              prediction_length=prediction_length,
                              stride=params.training.stride,
-                             value_cols='adjusted_close',
+                             value_cols=params.main.column,
                              saved_model=tested_saved_model)
 
     except Exception as ex:

@@ -7,13 +7,14 @@ main:
   autogluon_path: .
   trained_saved_model: models/trained-model.pkl
   tested_saved_model: models/tested-model.pkl
-  stock_symbol: QQQ
+  stock_symbol: CSCO
+  column: adjusted_close
   use_databricks: False
   experiment_name: default_experiment
 training:
   start_training_at: 261
-  prediction_length: 5
-  test_set_size: 520
+  prediction_length: 20
+  test_set_size: 104
   eval_metric: 'MAPE'
   presets: 'fast_training'
   time_limit: 90

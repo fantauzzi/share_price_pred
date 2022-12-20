@@ -14,10 +14,12 @@ main:
 training:
   start_training_at: 261
   prediction_length: 20
-  test_set_size: 104
   eval_metric: 'MAPE'
   presets: 'fast_training'
   time_limit: 90
   num_windows: 52
   stride: 201
   selected_model:
+test:
+  test_set_size: 104
+  stride: 1

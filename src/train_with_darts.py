@@ -14,16 +14,18 @@ import numpy as np
 # mlflow run src -e train_with_darts --experiment-name default_experiment
 
 
-def rolling_forecast(model: forecasting,
-                     df_dataset: pd.DataFrame,
-                     start_at: int,
-                     prediction_length: int,
-                     stride: int,
-                     value_cols: str,
-                     saved_model: str) -> (forecasting, pd.DataFrame):
+def forecast(model: forecasting,
+             df_dataset: pd.DataFrame,
+             rolling: bool,
+             start_at: int,
+             prediction_length: int,
+             stride: int,
+             value_cols: str,
+             saved_model: str) -> (forecasting, pd.DataFrame):
     """
     Trains and backtests the model, saves the resulting model and logs the model and metrics with MLFlow. Before
     being saved, the model is re-trained on the whole dataset.
+    :param rolling:
     :param model: the model to be trained and backtested.
     :param df_dataset: the dataset to be used for training and backtasting.
     :param start_at: the position of the first sample in the dataset that will be used to train the model; training
@@ -34,13 +36,13 @@ def rolling_forecast(model: forecasting,
     :param value_cols: the name of the column in the df_dataset dataframe that contain the variable to be forecasted
     :param saved_model: file name with path where the trained model will be saved
     """
-    ts_train_val = TimeSeries.from_dataframe(df=df_dataset, value_cols=value_cols)
+    ts_dataset = TimeSeries.from_dataframe(df=df_dataset, value_cols=value_cols)
 
-    forecasts = model.historical_forecasts(series=ts_train_val,
+    forecasts = model.historical_forecasts(series=ts_dataset,
                                            start=start_at,
                                            forecast_horizon=prediction_length,
                                            stride=stride,
-                                           retrain=True,
+                                           retrain=rolling,
                                            overlap_end=False,
                                            last_points_only=False,
                                            verbose=True)
@@ -49,17 +51,17 @@ def rolling_forecast(model: forecasting,
 
     forecasts_dict = {i: [] for i in range(prediction_length)}
     forecasts_timestamp = []
-    for metrics_series in forecasts:
-        metrics_series_pd = metrics_series.pd_series()
-        time_at_forecast = metrics_series_pd.index[0] - 1
+    for forecast_series in forecasts:
+        forecast_series_pd = forecast_series.pd_series()
+        time_at_forecast = forecast_series_pd.index[0] - 1
         forecasts_timestamp.append(time_at_forecast)
         for i in range(time_at_forecast, time_at_forecast + prediction_length):
-            forecasts_dict[i - time_at_forecast].append(metrics_series_pd[i + 1])
+            forecasts_dict[i - time_at_forecast].append(forecast_series_pd[i + 1])
 
     forecasts_df = pd.DataFrame(forecasts_dict, index=forecasts_timestamp)
 
     info('Re-fitting model on whole dataset')
-    model.fit(series=ts_train_val)
+    model.fit(series=ts_dataset)
     info(f'Saving traiend model into {saved_model}')
     model.save(saved_model)
     info(f'Logging artifact {saved_model} in current run')
@@ -68,7 +70,7 @@ def rolling_forecast(model: forecasting,
     return model, forecasts_df
 
 
-def log_rolling_forecasts(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols: str) -> None:
+def log_forecasts(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols: str) -> None:
     for t_index in forecasts_df.columns:
         for time_at_forecast in forecasts_df.index:
             mf.log_metrics({f'Forecast T{t_index + 1}': forecasts_df[t_index][time_at_forecast],
@@ -76,7 +78,7 @@ def log_rolling_forecasts(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, 
                            step=time_at_forecast + t_index + 1)
 
 
-def rolling_metrics(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols):
+def log_forecast_metrics(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, value_cols):
     prediction_length = len(forecasts_df.columns)
     ground_truth_dict = {i: [] for i in range(prediction_length)}
     for t_index in forecasts_df.columns:
@@ -121,36 +123,44 @@ def main(params: DictConfig) -> None:
         prediction_length = params.training.prediction_length
         model = ARIMA()
         trained_saved_model = f'../{params.main.trained_saved_model}'
-        df_train_val = df.iloc[:-params.training.test_set_size]
+        df_train_val = df.iloc[:-params.test.test_set_size]
 
         with mf.start_run(nested=True) as _:
             run_name = get_run_name()
             info(f'Started nested run {run_name} for training and validation via backtesting on model with '
                  f'{len(df_train_val)} samples')
-            model, forecast_df = rolling_forecast(model=model,
+            model, rolling_forecast_df = forecast(model=model,
                                                   df_dataset=df_train_val,
                                                   start_at=params.training.start_training_at,
                                                   prediction_length=prediction_length,
                                                   stride=params.training.stride,
+                                                  rolling=True,
                                                   value_cols=params.main.column,
                                                   saved_model=trained_saved_model)
 
-            log_rolling_forecasts(forecasts_df=forecast_df, df_dataset=df_train_val, value_cols=params.main.column)
+            log_forecasts(forecasts_df=rolling_forecast_df, df_dataset=df_train_val, value_cols=params.main.column)
 
-            rolling_metrics(forecasts_df=forecast_df, df_dataset=df_train_val, value_cols=params.main.column)
+            log_forecast_metrics(forecasts_df=rolling_forecast_df, df_dataset=df_train_val,
+                                 value_cols=params.main.column)
 
         tested_saved_model = f'../{params.main.tested_saved_model}'
         with mf.start_run(nested=True) as _:
             run_name = get_run_name()
             info(f'Started nested run {run_name} for testing on model with '
-                 f'{params.training.test_set_size} samples to be forecasted')
-            rolling_forecast(model=model,
-                             df_dataset=df,
-                             start_at=len(df) - params.training.test_set_size,
-                             prediction_length=prediction_length,
-                             stride=params.training.stride,
-                             value_cols=params.main.column,
-                             saved_model=tested_saved_model)
+                 f'{params.test.test_set_size} samples to be forecasted')
+            test_dataset_df = df.iloc[:-prediction_length]
+            model, forecast_df = forecast(model=model,
+                                          df_dataset=test_dataset_df,
+                                          start_at=len(df) - params.test.test_set_size,
+                                          prediction_length=prediction_length,
+                                          stride=params.test.stride,
+                                          rolling=False,
+                                          value_cols=params.main.column,
+                                          saved_model=tested_saved_model)
+
+            log_forecasts(forecasts_df=forecast_df, df_dataset=df, value_cols=params.main.column)
+
+            log_forecast_metrics(forecasts_df=forecast_df, df_dataset=df, value_cols=params.main.column)
 
     except Exception as ex:
         raise ex
@@ -161,10 +171,9 @@ def main(params: DictConfig) -> None:
 if __name__ == '__main__':
     main()
 
-""" TODO
-Why the spike in validation metrics toward the end of the training/val dataset?
-Implement the testing without rolling forecast (model is frozen, no retrained), draw charts of predictions vs. actual
-Add the MAPE metric (% error) 
+# TODO
+""" 
+Do automated unit testing
 Try different models, do hyperparameters tuning (Optuna?). How do you track the tuning with MLFlow? Check examples.
 Automate experiments on a list of symbols. Should those be uni or multi variate?
 Throw in an index as an exogenous variable
@@ -172,4 +181,5 @@ From source_data, save two different csv files for train/val and test
 Explain the model
 Dataset versoining
 Deployment and inference
+GUI (gradio?)
 """

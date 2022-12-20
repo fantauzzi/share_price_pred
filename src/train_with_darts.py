@@ -12,7 +12,7 @@ import numpy as np
 
 
 # mlflow run src -e train_with_darts --experiment-name default_experiment
-
+# python train_with_darts.py run=params_test
 
 def forecast(model: forecasting,
              df_dataset: pd.DataFrame,
@@ -103,27 +103,28 @@ def log_forecast_metrics(forecasts_df: pd.DataFrame, df_dataset: pd.DataFrame, v
 
 
 @hydra.main(config_path='../config', config_name='params')
+# @hydra.main(config_path='../config')
 def main(params: DictConfig) -> None:
     try:
         os.chdir('../../..')
         boostrap_pipeline_component(params)
 
-        symbol = params.main.stock_symbol
-        if params.main.dataset is not None:
-            info(f'Downloading artifact {params.main.dataset} as dataset')
-            data_filename = mf.artifacts.download_artifacts(artifact_uri=params.main.dataset)
+        symbol = params.run.main.stock_symbol
+        if params.run.main.dataset is not None:
+            info(f'Downloading artifact {params.run.main.dataset} as dataset')
+            data_filename = mf.artifacts.download_artifacts(artifact_uri=params.run.main.dataset)
         else:
             data_filename = get_data_filename(params, symbol)
         info(f'Loading data from file {data_filename}')
         df = load_daily_price_adjusted(data_filename)
-        columns_to_drop = set(df.columns) - {'timestamp', 'symbol', params.main.column}
+        columns_to_drop = set(df.columns) - {'timestamp', 'symbol', params.run.main.column}
         df.drop(columns_to_drop, axis=1, inplace=True)
         df['symbol'] = symbol
 
-        prediction_length = params.training.prediction_length
+        prediction_length = params.run.training.prediction_length
         model = ARIMA()
-        trained_saved_model = f'../{params.main.trained_saved_model}'
-        df_train_val = df.iloc[:-params.test.test_set_size]
+        trained_saved_model = f'../{params.run.main.trained_saved_model}'
+        df_train_val = df.iloc[:-params.run.test.test_set_size]
 
         with mf.start_run(nested=True) as _:
             run_name = get_run_name()
@@ -131,36 +132,36 @@ def main(params: DictConfig) -> None:
                  f'{len(df_train_val)} samples')
             model, rolling_forecast_df = forecast(model=model,
                                                   df_dataset=df_train_val,
-                                                  start_at=params.training.start_training_at,
+                                                  start_at=params.run.training.start_training_at,
                                                   prediction_length=prediction_length,
-                                                  stride=params.training.stride,
+                                                  stride=params.run.training.stride,
                                                   rolling=True,
-                                                  value_cols=params.main.column,
+                                                  value_cols=params.run.main.column,
                                                   saved_model=trained_saved_model)
 
-            log_forecasts(forecasts_df=rolling_forecast_df, df_dataset=df_train_val, value_cols=params.main.column)
+            log_forecasts(forecasts_df=rolling_forecast_df, df_dataset=df_train_val, value_cols=params.run.main.column)
 
             log_forecast_metrics(forecasts_df=rolling_forecast_df, df_dataset=df_train_val,
-                                 value_cols=params.main.column)
+                                 value_cols=params.run.main.column)
 
-        tested_saved_model = f'../{params.main.tested_saved_model}'
+        tested_saved_model = f'../{params.run.main.tested_saved_model}'
         with mf.start_run(nested=True) as _:
             run_name = get_run_name()
             info(f'Started nested run {run_name} for testing on model with '
-                 f'{params.test.test_set_size} samples to be forecasted')
+                 f'{params.run.test.test_set_size} samples to be forecasted')
             test_dataset_df = df.iloc[:-prediction_length]
             model, forecast_df = forecast(model=model,
                                           df_dataset=test_dataset_df,
-                                          start_at=len(df) - params.test.test_set_size,
+                                          start_at=len(df) - params.run.test.test_set_size,
                                           prediction_length=prediction_length,
-                                          stride=params.test.stride,
+                                          stride=params.run.test.stride,
                                           rolling=False,
-                                          value_cols=params.main.column,
+                                          value_cols=params.run.main.column,
                                           saved_model=tested_saved_model)
 
-            log_forecasts(forecasts_df=forecast_df, df_dataset=df, value_cols=params.main.column)
+            log_forecasts(forecasts_df=forecast_df, df_dataset=df, value_cols=params.run.main.column)
 
-            log_forecast_metrics(forecasts_df=forecast_df, df_dataset=df, value_cols=params.main.column)
+            log_forecast_metrics(forecasts_df=forecast_df, df_dataset=df, value_cols=params.run.main.column)
 
     except Exception as ex:
         raise ex
@@ -179,7 +180,7 @@ Automate experiments on a list of symbols. Should those be uni or multi variate?
 Throw in an index as an exogenous variable
 From source_data, save two different csv files for train/val and test
 Explain the model
-Dataset versoining
+Dataset versioning
 Deployment and inference
 GUI (gradio?)
 """

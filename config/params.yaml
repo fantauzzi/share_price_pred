@@ -1,25 +1,2 @@
-main:
-  steps: source_data,train
-  data_path: data
-  dataset:
-  # file:///home/fanta/workspace/share_price_pred/mlruns/644852676558696179/e346a69fcbbc484db75a75007e247c56/artifacts/daily_price-QQQ.csv
-  mlruns_path: mlruns
-  autogluon_path: .
-  trained_saved_model: models/trained-model.pkl
-  tested_saved_model: models/tested-model.pkl
-  stock_symbol: CSCO
-  column: adjusted_close
-  use_databricks: False
-  experiment_name: default_experiment
-training:
-  start_training_at: 261
-  prediction_length: 20
-  eval_metric: 'MAPE'
-  presets: 'fast_training'
-  time_limit: 90
-  num_windows: 52
-  stride: 201
-  selected_model:
-test:
-  test_set_size: 104
-  stride: 1
+defaults:
+  - run: params_run

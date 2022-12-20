@@ -28,10 +28,10 @@ def boostrap_pipeline_component(params: DictConfig) -> None:
     dot_hydra = f'{HydraConfig.get().run.dir}/{HydraConfig.get().output_subdir}'
     info(f'Hydra output sub-directory: {dot_hydra}')
 
-    tracking_uri = 'databricks' if params.main.use_databricks else str(Path('../' + params.main.mlruns_path).absolute())
+    tracking_uri = 'databricks' if params.run.main.use_databricks else str(Path('../' + params.run.main.mlruns_path).absolute())
     info(f'Tracking info will go to: {tracking_uri}')
     mf.set_tracking_uri(tracking_uri)
-    experiment_name = params.main.experiment_name  # TODO Should I allow to set it only from CLI, and here only read it?
+    experiment_name = params.run.main.experiment_name  # TODO Should I allow to set it only from CLI, and here only read it?
     # Therefore remove it from params.yaml
     mf.set_experiment(experiment_name)
     info(f'Experiment name is: {experiment_name}')
@@ -53,7 +53,7 @@ def get_data_filename(params: DictConfig, symbol: str) -> str:
     :return: the requested file name, with relative path.
     """
     # TODO Should I return an absolute path here instead?
-    data_filename = f'../{params.main.data_path}/daily_price-{symbol}.csv'
+    data_filename = f'../{params.run.main.data_path}/daily_price-{symbol}.csv'
     return data_filename
 
 
@@ -63,7 +63,7 @@ def get_autogluon_dir(params: DictConfig) -> str:
     :param params: configuration parameters, as filled in by Hydra.
     :return: the requested directory name, with a relative path.
     """
-    autogluon_dir = f'../{params.main.autogluon_path}/autogluon'
+    autogluon_dir = f'../{params.run.main.autogluon_path}/autogluon'
     return autogluon_dir
 
 
